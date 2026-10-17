@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>マークシート作成・自動採点</title>
+<style>
+:root{--bg:#fafaf7;--fg:#1c1c1a;--mut:#6b6b66;--card:#fff;--line:#d9d9d2;--ac:#c2410c;--ng:#b91c1c;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#171715;--fg:#ececE6;--mut:#a0a09a;--card:#222220;--line:#3a3a36;--ac:#fb923c;--ng:#f87171}}
+:root[data-theme="dark"]{--bg:#171715;--fg:#ececE6;--mut:#a0a09a;--card:#222220;--line:#3a3a36;--ac:#fb923c;--ng:#f87171}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 "Hiragino Sans","Yu Gothic",Meiryo,system-ui,sans-serif}
+main{max-width:980px;margin:0 auto;padding:20px 16px 48px}
+h1{font-size:20px;margin:0 0 4px}p.s{color:var(--mut);margin:0 0 16px;font-size:13px}
+nav{display:flex;gap:8px;margin-bottom:16px}
+button,input,textarea{font:inherit;color:var(--fg)}
+button{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 14px;cursor:pointer}
+button.on,button.p{background:var(--ac);border-color:var(--ac);color:#fff}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px}
+input[type=number]{width:72px;padding:6px;border:1px solid var(--line);border-radius:6px;background:var(--bg)}
+textarea{width:100%;box-sizing:border-box;border:1px solid var(--line);border-radius:8px;background:var(--bg);padding:8px;font:13px/1.5 ui-monospace,Menlo,monospace}
+canvas{max-width:100%;height:auto;border:1px solid var(--line);background:#fff}
+.sc{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left;white-space:nowrap}
+tr.r{cursor:pointer}tr.r:hover{background:var(--bg)}.w{color:var(--ng)}
+.row label{display:flex;align-items:center;gap:4px;font-size:13px}
+.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:8px 0}
+#pa{display:none}
+@media print{body.pr main>*:not(#pa){display:none!important}body.pr #pa{display:block}#pa img{width:100%;max-height:209mm;object-fit:contain;display:block;page-break-after:always}@page{size:A4 landscape;margin:0}.ui{display:none!important}#sheet{width:100%}}
+</style></head><body><main>
+<div class="ui"><h1>マークシート作成・自動採点</h1>
+<p class="s">すべてブラウザ内で処理され、画像や成績は外部に送信されません。用紙の描画と読取は同じレイアウト定義を使います。</p>
+<nav><button id="t1" class="on">① 用紙を作る</button><button id="t2">② 採点する</button></nav></div>
+
+<div id="pa"></div><section id="p1"><div class="card ui"><b>レイアウト設定</b><div class="row" id="cf"></div>
+<div class="row"><button id="fit">間隔を自動調整</button><button id="rst">初期値に戻す</button><button class="p" id="prn">印刷（A4横）</button></div><div id="wn" class="w"></div>
+<p class="s">四隅の黒い四角が位置合わせマークです。切り取らず、拡大縮小せずに印刷してください。</p></div>
+<canvas id="sheet" width="2970" height="2100"></canvas></section>
+
+<section id="p2" hidden class="ui"><div class="card"><b>レイアウトコード</b>（用紙作成画面の設定が自動で入ります。別の設定で作った用紙を読むときはここに貼り付け）<textarea id="code" rows="3"></textarea></div>
+<div class="card"><b>自己診断テスト</b> <button id="stb">実行</button><span class="s">（今のレイアウト設定で仮の答案を作り、自動で読み取って正解率を確かめます。傾き・薄い塗り・照明ムラの条件も試します）</span><div id="stout" class="sc"></div></div>
+<div class="card"><b>正答表</b> <input type="file" id="kf" accept=".xlsx,.xls,.csv"> <label>模範解答シートから作成 <input type="file" id="mf" accept="image/*,application/pdf"></label> <button id="edb">かんたんエディタ</button>（Excelファイルを読み込めます。貼り付けも可。1行1問：正答,配点,グループ,種別）
+<textarea id="key" rows="6" placeholder="3,2&#10;12,2,A,順不同部分点&#10;5,3,A,順不同部分点"></textarea>
+<div id="ed" hidden><div class="row">一括配点 <input id="edbs" type="number" min="0" value="2" style="width:64px"><button id="edbb">全問に適用</button><button id="ed100">100点満点に自動配分</button><button id="edclr">正答をすべてクリア</button></div><div class="sc" style="max-height:420px;overflow:auto"><table id="edt"></table></div></div>
+<p class="s">種別は「順不同」「順不同部分点」「完全一致」のいずれか。空欄なら通常採点。正答が空の行は採点対象外です。</p></div>
+<div class="card"><b>名簿（任意）</b>（組,番号,氏名 を1行1人。Excelから貼り付け可。氏名の表示と、名簿にないID・未提出者の確認ができます）<textarea id="ro" rows="4" placeholder="1,1,青木 太郎"></textarea></div>
+<div class="card"><div class="row"><label>学年（CSV用） <input id="gr2" type="text" size="8" placeholder="例：2年"></label><input id="fl" type="file" accept="image/*,application/pdf" multiple>
+<label>塗り判定 <input id="th" type="number" min="3" max="60" value="12">%</label><label>出席番号の最大（0=チェックなし） <input id="rmax" type="number" min="0" max="99" value="0"></label><label><input type="checkbox" id="nrm"> 照明ムラ補正</label><button class="p" id="go">読取・採点</button><button id="pall">採点結果を全員分印刷</button><button id="lw">前回の作業を開く</button><label>画像を再接続 <input type="file" id="rc" multiple accept="image/*,application/pdf"></label></div>
+<div id="msg" class="s"></div><div class="sc"><table id="tb"></table></div></div>
+<div class="card"><b>集計</b><div id="st" class="sc"></div></div>
+<div class="card"><b id="en">読み込めなかったファイル</b><div class="row"><label><input type="checkbox" id="vf"> 読み込めなかった・要確認のファイルだけ表示</label></div><textarea id="ef" rows="3" readonly></textarea><div id="mi" class="s"></div><div class="row"><button id="ce">ファイル名をコピー</button></div></div>
+<div class="card" id="vw" hidden><b id="vt"></b> <button id="mb">マーカーを手動で指定して再読取</button> <button id="pb">この1枚を印刷</button> <button id="mz">マーカーなしで手動採点</button> <label><input type="checkbox" id="dbg"> 塗り率を表示</label><div><canvas id="rp"></canvas></div><div class="row"><label><input type="checkbox" id="mpf"> 未塗り・複数塗り・誤答の設問だけ表示</label></div><div id="mp" class="sc" style="max-height:380px;overflow:auto"></div></div>
+<div class="card"><b>CSV</b>（コピーして表計算ソフトに貼り付け）<textarea id="csv" rows="5" readonly></textarea>
+<div class="row"><button id="cp">コピー</button></div></div></section>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+const W=2970,H=2100;
+const LS={zero:'1234567890',abc:'ABCDEFGHIJKL',kana:'アイウエオカキクケコサシ'};
+const DEF={nq:40,cols:2,nc:5,ls:'num',mL:20,mR:20,mT:36,idY:14,mB:20,bw:3.2,bh:4.4,px:8,py:6.8,grp:5,gsp:2.5,nw:7,ng:1.4,lh:1,idl:0.8,iw:2.8,ih:4.2,ix:5.4,id:1,tn:'マークシート解答用紙',tnX:72,tnY:9,tnS:4.5,gr:0,nm:1,nmX:23,nmY:14,nmW:95,nmH:6};
+let CFG={...DEF};
+const MK=[[60,60],[2910,60],[2910,2040],[60,2040]];
+const idf=()=>{const y=CFG.idY*10;return[...(CFG.gr?[["学年",358,y+CFG.ih*10+38,3]]:[]),["組10",1348,y,10],["組1",1348,y+CFG.ih*10+38,10],["番号10",2223,y,10],["番号1",2223,y+CFG.ih*10+38,10]]};
+const lab=()=>{const c=CFG;return c.ls=='num'?Array.from({length:c.nc},(_,i)=>String(i+1)):[...LS[c.ls]].slice(0,c.nc)};
+const Lq=()=>{const c=CFG,rows=Math.ceil(c.nq/c.cols),cp=(W-(c.mL+c.mR)*10)/c.cols;return{rows,cp,pos:q=>{const col=Math.floor(q/rows),r=q%rows;return[c.mL*10+col*cp+c.nw*10,c.mT*10+r*c.py*10+Math.floor(r/c.grp)*c.gsp*10]}}};
+function check(){const c=CFG,L=Lq(),w=[],cw=c.nw+(c.nc-1)*c.px+c.bw;
+if(cw*10>L.cp)w.push(`1列の幅(${cw.toFixed(0)}mm)が列の割り当て幅(${(L.cp/10).toFixed(0)}mm)を超えています`);
+const ly=c.mT*10+(L.rows-1)*c.py*10+Math.floor((L.rows-1)/c.grp)*c.gsp*10+c.bh*10,lim=H-c.mB*10;
+if(ly>lim)w.push(`最下行が下余白に${((ly-lim)/10).toFixed(1)}mm食い込みます`);
+if(c.id&&c.mT<c.idY+2*c.ih+8.1)w.push(`ID欄と重なります。上余白を${(c.idY+2*c.ih+8.1).toFixed(1)}mm以上にしてください`);
+if(c.py<c.bh+1.5||c.px<c.bw+1.5)w.push('丸の間隔が狭すぎます');if(c.id&&c.mT<c.idY+2*c.ih+7.1+c.lh)w.push('マーク欄の上の数字がID欄と重なります。上余白を増やすか数字の高さを小さくしてください');if(c.id&&c.idl>1.6)w.push('ID欄の数字が上段の丸と重なります');if(c.id&&c.idY<11.5+c.idl)w.push('ID欄の数字がタイトルと重なります。ID欄の位置を下げてください');if(c.id&&c.ix<c.iw+1.5)w.push('ID欄の丸の間隔が狭すぎます');if(c.id&&(1348+9*c.ix*10+c.iw*10>2203||2223+9*c.ix*10+c.iw*10>2850))w.push('ID欄の丸の間隔が広すぎて、組と番号の欄が重なる、または用紙からはみ出します');if(c.nw<c.ng+4)w.push('番号欄の幅が狭く、問題番号がはみ出します');return w}
+const $=id=>document.getElementById(id);
+
+// ---- 用紙描画 ----
+function drawSheet(cv){const c=cv||$('sheet'),x=c.getContext('2d'),C=CFG,L=Lq(),M=lab(),bw=C.bw*10,bh=C.bh*10,pp=C.px*10;
+x.fillStyle='#fff';x.fillRect(0,0,W,H);x.fillStyle='#000';MK.forEach(([a,b])=>x.fillRect(a-22,b-22,44,44));
+x.strokeStyle='#000';x.lineWidth=2;const cap=(a,b,w,h)=>{x.beginPath();x.roundRect(a,b,w,h,Math.min(w,h)/2.5);x.stroke()};
+x.textAlign='left';x.font=C.tnS*10+'px sans-serif';x.fillText(C.tn,C.tnX*10,C.tnY*10);if(C.nm){x.font='30px sans-serif';x.strokeRect(C.nmX*10,C.nmY*10,C.nmW*10,C.nmH*10);x.fillText('氏名',C.nmX*10+10,C.nmY*10-8)}x.font='30px sans-serif';
+if(C.id){[...(C.gr?[["学年",230,C.idY*10+C.ih*15+47]]:[]),["組",1230,C.idY*10+C.ih*10+28],["番号",2090,C.idY*10+C.ih*10+28]].forEach(([t,a,b])=>x.fillText(t,a,b));x.font='20px sans-serif';x.textAlign='center';
+for(const[k,a,b,m]of idf())for(let i=0;i<m;i++){cap(a+i*CFG.ix*10,b,CFG.iw*10,CFG.ih*10);x.fillText('1234567890'[i],a+i*CFG.ix*10+CFG.iw*10/2,b-C.idl*10)}}
+x.font='20px sans-serif';x.textAlign='center';
+for(let q=0;q<C.nq;q++){const[a,b]=L.pos(q);if(q%L.rows==0)M.forEach((t,i)=>x.fillText(t,a+i*pp+bw/2,b-C.lh*10));
+M.forEach((t,i)=>cap(a+i*pp,b,bw,bh));x.textAlign='right';x.fillText(String(q+1),a-C.ng*10,b+bh*.7);x.textAlign='center'}}
+
+// ---- 画像処理 ----
+function load(img){const s=Math.min(1,4000/Math.max(img.width,img.height)),c=document.createElement('canvas');c.width=img.width*s|0;c.height=img.height*s|0;
+const x=c.getContext('2d',{willReadFrequently:true});x.drawImage(img,0,0,c.width,c.height);const d=x.getImageData(0,0,c.width,c.height).data,g=new Uint8Array(c.width*c.height);
+for(let i=0;i<g.length;i++)g[i]=(d[i*4]*77+d[i*4+1]*151+d[i*4+2]*28)>>8;return{c,g:NORM?flat(g,c.width,c.height):g,w:c.width,h:c.height}}
+let NORM=false;
+function flat(g,w,h){const B=160,bx=Math.ceil(w/B),by=Math.ceil(h/B),bg=new Float32Array(bx*by);
+for(let j=0;j<by;j++)for(let i=0;i<bx;i++){let m=0;for(let y=j*B;y<Math.min(h,j*B+B);y+=2)for(let x=i*B;x<Math.min(w,i*B+B);x+=2){const v=g[y*w+x];if(v>m)m=v}bg[j*bx+i]=m||255}
+const out=new Uint8Array(w*h);for(let y=0;y<h;y++){const fy=Math.min(by-1,Math.max(0,(y-B/2)/B)),j0=Math.floor(fy),j1=Math.min(by-1,j0+1),ty=fy-j0;
+for(let x=0;x<w;x++){const fx=Math.min(bx-1,Math.max(0,(x-B/2)/B)),i0=Math.floor(fx),i1=Math.min(bx-1,i0+1),tx=fx-i0;
+const b=(bg[j0*bx+i0]*(1-tx)+bg[j0*bx+i1]*tx)*(1-ty)+(bg[j1*bx+i0]*(1-tx)+bg[j1*bx+i1]*tx)*ty;out[y*w+x]=Math.min(255,g[y*w+x]*255/Math.max(b,60))}}return out}
+function otsu(g){const h=new Array(256).fill(0);for(let i=0;i<g.length;i+=3)h[g[i]]++;let t=0,tot=0;for(let i=0;i<256;i++){tot+=h[i];t+=i*h[i]}
+let sb=0,wb=0,mx=0,th=128;for(let i=0;i<256;i++){wb+=h[i];if(!wb)continue;const wf=tot-wb;if(!wf)break;sb+=i*h[i];const m=sb/wb,mf=(t-sb)/wf,v=wb*wf*(m-mf)*(m-mf);if(v>mx){mx=v;th=i}}return th}
+function findMarkers(I,th){const{g,w,h}=I,rw=w*.3|0,rh=h*.3|0,out=[];
+const R=[[0,0],[w-rw,0],[w-rw,h-rh],[0,h-rh]],K=[[0,0],[w,0],[w,h],[0,h]];
+for(let k=0;k<4;k++){const[ox,oy]=R[k],seen=new Uint8Array(rw*rh);let best=null,bd=1e18;
+for(let y=0;y<rh;y++)for(let x=0;x<rw;x++){const p=y*rw+x;if(seen[p]||g[(oy+y)*w+ox+x]>=th)continue;
+const st=[p];let n=0,sx=0,sy=0,x0=x,x1=x,y0=y,y1=y;seen[p]=1;
+while(st.length){const q=st.pop(),qx=q%rw,qy=(q/rw)|0;n++;sx+=qx;sy+=qy;if(qx<x0)x0=qx;if(qx>x1)x1=qx;if(qy<y0)y0=qy;if(qy>y1)y1=qy;
+for(const[dx,dy]of[[1,0],[-1,0],[0,1],[0,-1]]){const nx=qx+dx,ny=qy+dy;if(nx<0||ny<0||nx>=rw||ny>=rh)continue;const np=ny*rw+nx;if(!seen[np]&&g[(oy+ny)*w+ox+nx]<th){seen[np]=1;st.push(np)}}}
+const bw=x1-x0+1,bh=y1-y0+1,ar=bw/bh;
+if(n>w*h*4e-5&&n<w*h*3e-3&&n/(bw*bh)>.8&&ar>.7&&ar<1.4){const cx=ox+sx/n,cy=oy+sy/n,d=(cx-K[k][0])**2+(cy-K[k][1])**2;if(d<bd){bd=d;best=[cx,cy]}}}
+if(!best)return null;out.push(best)}return out}
+function homog(S,D){const A=[],b=[];for(let i=0;i<4;i++){const[x,y]=S[i],[u,v]=D[i];A.push([x,y,1,0,0,0,-u*x,-u*y]);b.push(u);A.push([0,0,0,x,y,1,-v*x,-v*y]);b.push(v)}
+for(let i=0;i<8;i++){let m=i;for(let r=i+1;r<8;r++)if(Math.abs(A[r][i])>Math.abs(A[m][i]))m=r;[A[i],A[m]]=[A[m],A[i]];[b[i],b[m]]=[b[m],b[i]];
+for(let r=i+1;r<8;r++){const f=A[r][i]/A[i][i];for(let c=i;c<8;c++)A[r][c]-=f*A[i][c];b[r]-=f*b[i]}}
+const h=Array(8);for(let i=7;i>=0;i--){let s=b[i];for(let c=i+1;c<8;c++)s-=A[i][c]*h[c];h[i]=s/A[i][i]}
+return(x,y)=>{const d=h[6]*x+h[7]*y+1;return[(h[0]*x+h[1]*y+h[2])/d,(h[3]*x+h[4]*y+h[5])/d]}}
+function ratio(I,T,th,cx,cy,sw,sh){let n=0,t=0;for(let j=0;j<11;j++)for(let i=0;i<8;i++){const[x,y]=T(cx-sw/2+i*sw/7,cy-sh/2+j*sh/10),a=Math.round(x),b=Math.round(y);t++;if(a>=0&&b>=0&&a<I.w&&b<I.h&&I.g[b*I.w+a]<th)n++}return n/t}
+function pick(r,base){const c=r.map((v,i)=>[i,v]).filter(a=>a[1]>base);if(!c.length)return[];const m=Math.max(...c.map(a=>a[1]));return c.filter(a=>a[1]>=m*.4).map(a=>a[0])}
+function meanG(I,T,cx,cy,sw,sh){let t=0,n=0;for(let j=0;j<11;j++)for(let i=0;i<8;i++){const[x,y]=T(cx-sw/2+i*sw/7,cy-sh/2+j*sh/10),a=Math.round(x),b=Math.round(y);if(a>=0&&b>=0&&a<I.w&&b<I.h){t+=I.g[b*I.w+a];n++}}return n?t/n:255}
+function pickRel(v,dl){const mx=Math.max(...v),d=v.map(m=>mx-m),dm=Math.max(...d);if(dm<dl)return[];return d.map((x,i)=>[i,x]).filter(a=>a[1]>=dm*.5&&a[1]>=dl).map(a=>a[0])}
+function readSheet(I,base,mo){const C=CFG,L=Lq(),M=lab(),th=otsu(I.g),mk=mo||findMarkers(I,th);if(!mk)throw new Error('位置合わせマークを4つ検出できません');
+const T=homog(MK,mk),flags=[],id={},idd=[],idp={};let ids='-';
+if(C.id){for(const[k,a,b,m]of idf()){const v=[];for(let i=0;i<m;i++)v.push(meanG(I,T,a+i*CFG.ix*10+CFG.iw*10/2,b+CFG.ih*10/2,CFG.iw*5.7,CFG.ih*5.2));idd.push([a,b,v.map(m2=>Math.round(Math.max(...v)-m2))]);const p=pickRel(v,22),tens=k=='組10'||k=='番号10';idp[k]=p;
+if(p.length>1){flags.push(k+'が複数塗り');id[k]='?'}else if(p.length==1)id[k]='1234567890'[p[0]];else if(tens)id[k]='0';else{flags.push(k+'が未塗り');id[k]='?'}}
+ids=`${C.gr?id.学年+'年 ':''}${id.組10}${id.組1}組 ${id.番号10}${id.番号1}番`;}
+const marks=[],idxs=[],rat=[],sw=C.bw*5.7,sh=C.bh*5.2;
+for(let q=0;q<C.nq;q++){const[a,b]=L.pos(q),r=[];for(let i=0;i<C.nc;i++)r.push(ratio(I,T,th,a+i*C.px*10+C.bw*5,b+C.bh*5,sw,sh));const p=pick(r,base);
+if(p.length>2)flags.push('問'+(q+1)+'が3つ以上塗り');marks.push(p.map(i=>M[i]));idxs.push(p);rat.push(r)}
+return{id:ids,marks,idxs,rat,idd,idp,mk,T,flags}}
+
+// ---- 採点 ----
+function parseKey(t){const k=[];for(const ln of t.split(/\r?\n/)){if(!ln.trim())continue;
+const c=ln.split(/[\t,]/).map(s=>s.trim().replace(/[０-９]/g,d=>'０１２３４５６７８９'.indexOf(d))),f=c[3]||'';
+k.push({val:c[0]?c[0].toUpperCase():null,score:(m=>m?parseFloat(m[0]):1)((c[1]||'').match(/[\d.]+/)),gid:c[2]||null,ut:f.includes('順不同部分点')?'partial':f.includes('順不同')?'perfect':null})}return k.slice(0,75)}
+function grade(marks,key,ov){const R=[],G={};
+key.forEach((k,i)=>{const m=marks[i]||[],sv=m.length?m.join(''):null;R.push({s:sv,ok:k.val!==null&&sv===k.val,sc:0});
+if(k.gid){const g=G[k.gid]||(G[k.gid]={ut:k.ut,e:[],a:[],ix:[]});g.e.push(k.val);g.a.push({v:sv,i});g.ix.push(i)}});
+for(const g of Object.values(G)){
+if(g.ut=='partial'){const p=g.e.slice();for(const a of g.a){const j=a.v!==null?p.indexOf(a.v):-1;R[a.i].ok=j>=0;if(j>=0)p.splice(j,1)}}
+else if(g.ut=='perfect'){const e=g.e.filter(v=>v!==null).sort().join('|'),a=g.a.map(x=>x.v).filter(v=>v!==null).sort().join('|');const ok=e.length>0&&e==a;g.ix.forEach(i=>R[i].ok=ok)}
+else{const ok=g.ix.every(i=>R[i].ok);g.ix.forEach(i=>R[i].ok=ok)}}
+if(ov)for(const q in ov)if(R[q])R[q].ok=ov[q];let tot=0,max=0;R.forEach((r,i)=>{const k=key[i];if(k.val!==null){max+=k.score;if(r.ok){r.sc=k.score;tot+=k.score}}});return{R,tot,max}}
+
+// ---- 赤ペン ----
+function redpen(I,r,key,res,dbg){const C=CFG,L=Lq(),M=lab(),c=document.createElement('canvas');c.width=I.w;c.height=I.h;const x=c.getContext('2d');x.drawImage(I.c,0,0);
+const T=r.T,o=T(0,0),e=T(100,0),s=Math.hypot(e[0]-o[0],e[1]-o[1])/100;x.lineWidth=Math.max(2,3*s);
+const P=(q,i)=>{const[a,b]=L.pos(q);return T(a+i*C.px*10+C.bw*5,b+C.bh*5)},ex=v=>v==null?[]:[...v].map(h=>M.indexOf(h)).filter(i=>i>=0),R=C.bh*4.2*s,D=C.bw*4*s;
+const ring=(q,i)=>{const[a,b]=P(q,i);x.beginPath();x.arc(a,b,R,0,7);x.stroke()};
+key.forEach((k,q)=>{if(q>=C.nq)return;x.strokeStyle='#e00';if(res.R[q].ok)(r.idxs[q].length?r.idxs[q]:ex(k.val)).forEach(i=>ring(q,i));else{ex(k.val).forEach(i=>ring(q,i));x.strokeStyle='#00f';
+r.idxs[q].forEach(i=>{const[a,b]=P(q,i);x.beginPath();x.moveTo(a-D,b-D);x.lineTo(a+D,b+D);x.moveTo(a+D,b-D);x.lineTo(a-D,b+D);x.stroke()})}});
+if(dbg){x.font=`${Math.max(10,C.bw*7*s)}px sans-serif`;x.textAlign='center';for(let q=0;q<C.nq;q++)for(let i=0;i<C.nc;i++){const v=r.rat[q][i];if(v<.01)continue;const[a,b]=P(q,i);x.fillStyle=r.idxs[q].includes(i)?'#e00':'#06c';x.fillText(Math.round(v*100),a,b+(C.bh*5+20)*s)}
+for(const[a,b,dd]of r.idd)dd.forEach((v,i)=>{const[px,py]=T(a+i*C.ix*10+C.iw*5,b+C.ih*10+22);x.fillStyle=v>=22?'#e00':'#06c';x.fillText(v,px,py)});x.textAlign='left'}
+if(r.idp&&C.id){x.strokeStyle='#0a0';for(const[k,a,b,m]of idf())(r.idp[k]||[]).forEach(i=>{const[px,py]=T(a+i*C.ix*10+C.iw*5,b+C.ih*5);x.beginPath();x.arc(px,py,C.ih*4.2*s,0,7);x.stroke()})}
+x.fillStyle='#e00';x.font=`bold ${90*s}px sans-serif`;const p=T(2000,180);x.fillText(`${res.tot} / ${res.max}`,p[0],p[1]);return c}
+
+// ---- UI ----
+let OUT=[];
+const tab=n=>{$('p1').hidden=n!=1;$('p2').hidden=n!=2;$('t1').className=n==1?'on':'';$('t2').className=n==2?'on':''};
+$('t1').onclick=()=>tab(1);$('t2').onclick=()=>tab(2);
+$('prn').onclick=()=>window.print();
+$('kf').onchange=async function(){const f=this.files[0];if(!f)return;if(typeof XLSX=='undefined'){$('msg').textContent='Excel読込ライブラリを読み込めませんでした。貼り付けをご利用ください';return}
+try{const wb=XLSX.read(await f.arrayBuffer()),rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:''});
+let use=rows.filter(r=>String(r[4]).startsWith('問'));if(!use.length)use=rows.filter(r=>r.slice(0,4).some(v=>String(v).trim()!=='')&&String(r[0])!=='正答');
+while(use.length&&String(use[use.length-1][0]).trim()==='')use.pop();
+$('key').value=use.map(r=>[0,1,2,3].map(i=>String(r[i]??'').trim()).join('\t')).join('\n');$('msg').textContent=`正答表を${use.length}問分読み込みました`;saveS()}catch(e){$('msg').textContent='Excelを読み込めませんでした'}};
+let CUR=null;
+async function manual(o){if(!o||!o.file)return;const I=load(await o.file.get()),d=$('rp'),x=d.getContext('2d');d.width=I.w;d.height=I.h;x.drawImage(I.c,0,0);
+$('vt').textContent=o.name+'：四隅の黒い四角の中心を 左上→右上→右下→左下 の順にクリックしてください';$('vw').hidden=false;$('vw').scrollIntoView();
+const pts=[];d.style.cursor='crosshair';
+d.onclick=e=>{const b=d.getBoundingClientRect(),px=(e.clientX-b.left)*d.width/b.width,py=(e.clientY-b.top)*d.height/b.height;pts.push([px,py]);x.fillStyle='#e00';x.beginPath();x.arc(px,py,Math.max(6,d.width/200),0,7);x.fill();
+if(pts.length==4){d.onclick=null;d.style.cursor='';try{const r=readSheet(I,o.base,pts),res=o.key&&o.key.length?grade(r.marks,o.key):null;Object.assign(o,{I,r,res,err:0,flags:[...r.flags,'手動マーカー指定'],id:r.id});render();showRed(o)}catch(er){$('msg').textContent='再読取に失敗しました'}}}}
+function recalc(o){if(o.key&&o.key.length)o.res=grade(o.r.marks,o.key,o.r.ov);if(!o.flags.includes('手動修正'))o.flags.push('手動修正');render();showRed(o)}
+function tgl(o,q,i){const ix=o.r.idxs[q],k=ix.indexOf(i);if(k>=0)ix.splice(k,1);else ix.push(i);ix.sort((u,v)=>u-v);o.r.marks[q]=ix.map(j=>lab()[j]);if(o.r.ov)delete o.r.ov[q];recalc(o)}
+function ovr(o,q,v){const ov=o.r.ov||(o.r.ov={});if(ov[q]===v)delete ov[q];else ov[q]=v;recalc(o)}
+function idFrom(pk){if(!CFG.id)return{ids:'-',fl:[]};const fl=[],id={};for(const[k]of idf()){const p=pk[k]||[],tens=k=='組10'||k=='番号10';if(p.length>1){fl.push(k+'が複数塗り');id[k]='?'}else if(p.length==1)id[k]='1234567890'[p[0]];else if(tens)id[k]='0';else{fl.push(k+'が未塗り');id[k]='?'}}
+return{ids:(CFG.gr?id.学年+'年 ':'')+`${id.組10}${id.組1}組 ${id.番号10}${id.番号1}番`,fl}}
+function idTgl(o,k,i){const pk=o.r.idp||(o.r.idp={}),cur=pk[k]||[];pk[k]=cur.includes(i)?[]:[i];const x=idFrom(pk);o.r.id=o.id=x.ids;o.flags=o.flags.filter(f=>!/^(学年|組10|組1|番号10|番号1)が/.test(f)).concat(x.fl);recalc(o)}
+function mpRender(o){const el=$('mp'),M=lab(),f=$('mpf').checked,t=document.createElement('table'),hd=t.insertRow();
+['問','塗り','正答','判定','強制'].forEach(x=>{const h=document.createElement('th');h.textContent=x;hd.appendChild(h)});
+const ov=o.r.ov||{},mk=(tx,on,fn)=>{const b=document.createElement('button');b.textContent=tx;b.style.cssText='padding:2px 8px;margin:1px';if(on)b.className='p';b.onclick=fn;return b};
+for(let q=0;q<CFG.nq;q++){const ix=o.r.idxs[q],k=o.key[q],R=o.res.R[q]||{ok:false},has=k&&k.val!==null;
+if(f&&!(ix.length!=1||(has&&!R.ok)))continue;
+const r=t.insertRow();r.insertCell().textContent='問'+(q+1);const c=r.insertCell();M.forEach((ch,i)=>c.appendChild(mk(ch,ix.includes(i),()=>tgl(o,q,i))));
+r.insertCell().textContent=has?`${k.val}（${k.score}点）`:'-';
+const j=r.insertCell();if(has){j.textContent=R.ok?'〇':'×';if(!R.ok)j.className='w'}else j.textContent=ix.length?o.r.marks[q].join(''):'未塗り';
+const d=r.insertCell();[['〇',true],['×',false]].forEach(([tx,v])=>d.appendChild(mk(tx,ov[q]===v,()=>ovr(o,q,v))))}
+el.textContent='';el.appendChild(t)}
+function showRed(o){if(!o.res)return;if(!o.I||!o.r.T){$('msg').textContent='画像が未接続です。「画像を再接続」で元のファイルを選んでください';return}CUR=o;const c=redpen(o.I,o.r,o.key,o.res,$('dbg').checked),d=$('rp');d.width=c.width;d.height=c.height;d.getContext('2d').drawImage(c,0,0);$('vt').textContent=o.id+'  '+o.name+'（丸をクリックすると塗りを修正できます。ID欄の丸も修正できます）';$('vw').hidden=false;d.style.cursor='pointer';mpRender(o);
+d.onclick=e=>{const b=d.getBoundingClientRect(),px=(e.clientX-b.left)*d.width/b.width,py=(e.clientY-b.top)*d.height/b.height,C=CFG,L=Lq(),T=o.r.T,t0=T(0,0),t1=T(100,0),s=Math.hypot(t1[0]-t0[0],t1[1]-t0[1])/100;let best=null,bd=1e18;
+const chk=(x,y,t)=>{const dd=(x-px)**2+(y-py)**2;if(dd<bd){bd=dd;best=t}};
+for(let q=0;q<C.nq;q++){const[a,y0]=L.pos(q);for(let i=0;i<C.nc;i++){const[x,y]=T(a+i*C.px*10+C.bw*5,y0+C.bh*5);chk(x,y,['q',q,i])}}
+if(C.id)for(const[k,a,b2,m]of idf())for(let i=0;i<m;i++){const[x,y]=T(a+i*C.ix*10+C.iw*5,b2+C.ih*5);chk(x,y,['id',k,i])}
+if(!best||bd>(C.bh*6*s)**2)return;if(best[0]=='q')tgl(o,best[1],best[2]);else idTgl(o,best[1],best[2])}}
+async function printImgs(list){const pa=$('pa');pa.textContent='';const ims=list.map(u=>{const im=new Image();im.src=u;pa.appendChild(im);return im});try{await Promise.all(ims.map(i=>i.decode()))}catch(e){}document.body.classList.add('pr');window.print();document.body.classList.remove('pr')}
+$('pall').onclick=()=>{const ok=OUT.filter(o=>o.res&&o.I);if(!ok.length){$('msg').textContent='印刷できる採点結果がありません';return}printImgs(ok.map(o=>redpen(o.I,o.r,o.key,o.res).toDataURL('image/jpeg',.85)))};
+$('pb').onclick=()=>printImgs([$('rp').toDataURL('image/jpeg',.85)]);
+function roster(){const m={};$('ro').value.split(/\r?\n/).forEach(l=>{const c=l.split(/[\t,]/).map(x=>x.trim().replace(/[０-９]/g,d=>'０１２３４５６７８９'.indexOf(d)));if(c.length>=3&&/^\d+$/.test(c[0])&&/^\d+$/.test(c[1]))m[`${+c[0]}-${+c[1]}`]=c.slice(2).join(' ')});return m}
+function checkIds(){const mx=+$('rmax').value||0,cnt={},cls={},ro=roster(),hasRo=Object.keys(ro).length>0,seen=new Set();
+OUT.forEach(o=>{o.flags=o.flags.filter(f=>f!='ID重複'&&f!='番号が範囲外'&&f!='名簿にないID');o.nm='';if(!o.err)cnt[o.id]=(cnt[o.id]||0)+1});
+OUT.forEach(o=>{if(o.err||o.id=='-'||o.id.includes('?'))return;if(cnt[o.id]>1)o.flags.push('ID重複');const m=o.id.match(/(\d+)組 (\d+)番/);
+if(m){const n=+m[2],k=`${+m[1]}-${n}`;if(mx&&(n<1||n>mx))o.flags.push('番号が範囲外');(cls[m[1]+'組']=cls[m[1]+'組']||new Set()).add(n);if(hasRo){seen.add(k);if(ro[k])o.nm=ro[k];else o.flags.push('名簿にないID')}}});
+let t='';if(hasRo){const miss=Object.keys(ro).filter(k=>!seen.has(k));t=miss.length?`未提出・欠席の可能性（${miss.length}人）：`+miss.map(k=>{const[a,b]=k.split('-');return `${a}組${b}番 ${ro[k]}`}).join('、'):'名簿の全員分が読み取れています'}
+else if(mx)t=Object.keys(cls).sort().map(k=>{const miss=[];for(let n=1;n<=mx;n++)if(!cls[k].has(n))miss.push(n);return `${k}の欠番：${miss.length?miss.join('、'):'なし'}`}).join(' ／ ');
+$('mi').textContent=t}
+async function expand(files){const out=[];for(const f of files){if(/\.pdf$/i.test(f.name)||f.type=='application/pdf'){
+if(typeof pdfjsLib=='undefined'){out.push({name:f.name,get:async()=>{throw new Error('PDF読込ライブラリを読み込めません')}});continue}
+try{pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';const pdf=await pdfjsLib.getDocument({data:new Uint8Array(await f.arrayBuffer())}).promise;
+for(let p=1;p<=pdf.numPages;p++)out.push({name:f.name+(pdf.numPages>1?` (p.${p})`:''),get:async()=>{const pg=await pdf.getPage(p),vp=pg.getViewport({scale:300/72}),c=document.createElement('canvas');c.width=vp.width|0;c.height=vp.height|0;const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height);await pg.render({canvasContext:x,viewport:vp}).promise;return c}})}
+catch(e){out.push({name:f.name,get:async()=>{throw new Error('PDFを開けません')}})}}
+else out.push({name:f.name,get:()=>imgOf(f)})}return out}
+function stats(){const ok=OUT.filter(o=>o.res),el=$('st');if(!ok.length){el.textContent='採点結果がありません';return}
+const n=ok.length,sc=ok.map(o=>o.res.tot),mx=ok[0].res.max,avg=sc.reduce((a,b)=>a+b,0)/n,so=[...sc].sort((a,b)=>a-b),med=n%2?so[n>>1]:(so[n/2-1]+so[n/2])/2,sd=Math.sqrt(sc.reduce((a,b)=>a+(b-avg)**2,0)/n),f=v=>(Math.round(v*10)/10).toString();
+const bar=p=>`<div style="background:var(--line);width:160px;height:10px;border-radius:5px"><div style="background:var(--ac);width:${Math.round(p)}%;height:10px;border-radius:5px"></div></div>`;
+let h=`<p>人数 ${n}人 ／ 平均 ${f(avg)} ／ 中央値 ${f(med)} ／ 最高 ${f(so[n-1])} ／ 最低 ${f(so[0])} ／ 標準偏差 ${f(sd)}（満点 ${f(mx)}）</p>`;
+if(mx>0){const bins=Array(10).fill(0);sc.forEach(v=>bins[Math.min(9,Math.floor(v/mx*10))]++);h+='<table><tr><th>得点率</th><th>人数</th><th></th></tr>'+bins.map((c,i)=>`<tr><td>${i*10}〜${i*10+10}%</td><td>${c}</td><td>${bar(c/n*100)}</td></tr>`).join('')+'</table>'}
+const key=ok[0].key,M=lab(),esc=v=>String(v).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+h+='<br><table><tr><th>問</th><th>正答率</th><th></th>'+M.map(c=>`<th>${esc(c)}</th>`).join('')+'<th>無解答</th></tr>'+key.map((k,q)=>{if(k.val===null||q>=CFG.nq)return '';const c=ok.filter(o=>o.res.R[q].ok).length,cnt=M.map(ch=>ok.filter(o=>(o.r.marks[q]||[]).includes(ch)).length),ans=k.val||'';
+return `<tr><td>${q+1}</td><td>${f(c/n*100)}%</td><td>${bar(c/n*100)}</td>`+cnt.map((v,i)=>`<td${ans.includes(M[i])?' style="font-weight:700;color:var(--ac)"':''}>${v}</td>`).join('')+`<td>${ok.filter(o=>!o.r.marks[q]||!o.r.marks[q].length).length}</td></tr>`}).join('')+'</table><p class="s">選択肢の列は、その選択肢を選んだ人数です（太字・色付きが正答）。</p>';
+const rk=[...ok].sort((a,b)=>b.res.tot-a.res.tot);let rn=0,pv=null;
+h+='<table><tr><th>順位</th><th>読取ID</th><th>氏名</th><th>得点</th></tr>'+rk.map((o,i)=>{if(o.res.tot!==pv){rn=i+1;pv=o.res.tot}return `<tr><td>${rn}</td><td>${esc(o.id)}</td><td>${esc(o.nm||'')}</td><td>${f(o.res.tot)} / ${f(o.res.max)}</td></tr>`}).join('')+'</table>';
+el.innerHTML=h}
+function saveS(){try{localStorage.setItem('omrs',JSON.stringify({k:$('key').value,t:$('th').value,r:$('rmax').value,g:$('gr2').value,o:$('ro').value,n:$('nrm').checked}))}catch(e){}}
+['key','th','rmax','gr2','ro'].forEach(id=>$(id).addEventListener('input',saveS));$('nrm').onchange=()=>{NORM=$('nrm').checked;saveS()};
+try{const o=JSON.parse(localStorage.getItem('omrs')||'null');if(o){$('key').value=o.k||'';$('th').value=o.t||12;$('rmax').value=o.r||0;$('gr2').value=o.g||'';$('ro').value=o.o||'';$('nrm').checked=!!o.n;NORM=!!o.n}}catch(e){}
+$('rmax').oninput=render;$('dbg').onchange=()=>{if(CUR&&CUR.res)showRed(CUR)};
+$('mb').onclick=()=>manual(CUR);
+function saveWork(){if(!OUT.length)return;try{localStorage.setItem('omrwork',JSON.stringify(OUT.map(o=>({name:o.name,id:o.id,flags:o.flags,err:o.err?1:0,key:o.key,base:o.base,r:o.r?{id:o.r.id,marks:o.r.marks,idxs:o.r.idxs,idp:o.r.idp||{},ov:o.r.ov||{},mk:o.r.mk||null,full:o.r.full||0}:null}))))}catch(e){}}
+function loadWork(){let d=null;try{d=JSON.parse(localStorage.getItem('omrwork')||'null')}catch(e){}if(!d||!d.length){$('msg').textContent='保存された作業がありません';return}
+OUT=d.map(x=>{const o={name:x.name,id:x.id,flags:x.flags||[],err:x.err,key:x.key||[],base:x.base||.12};if(x.r){o.r={...x.r,rat:x.r.marks.map(()=>Array(CFG.nc).fill(0)),idd:[],T:null,flags:o.flags};o.res=o.key.length?grade(o.r.marks,o.key,o.r.ov):null}return o});
+$('msg').textContent=`前回の作業（${OUT.length}件）を開きました。赤ペン画像を見るには「画像を再接続」で元のファイルを選んでください`;render()}
+$('lw').onclick=loadWork;
+$('rc').onchange=async function(){const its=await expand([...this.files]);let n=0;for(const it of its){const o=OUT.find(x=>x.name==it.name&&!x.I);if(!o)continue;o.file=it;try{const I=load(await it.get());o.I=I;if(o.r)o.r.T=o.r.mk?homog(MK,o.r.mk):homog([[0,0],[W,0],[W,H],[0,H]],[[0,0],[I.w,0],[I.w,I.h],[0,I.h]]);n++}catch(e){}}this.value='';$('msg').textContent=`${n}件の画像を再接続しました`;render()};
+const nz=(d,a)=>{for(let i=0;i<d.length;i+=4){const v=Math.max(0,Math.min(255,d[i]+(Math.random()*2-1)*a));d[i]=d[i+1]=d[i+2]=v}};
+async function runTest(sc){const C=CFG,L=Lq(),M=lab(),cv=document.createElement('canvas');cv.width=W;cv.height=H;drawSheet(cv);const x=cv.getContext('2d');x.fillStyle=`rgb(${sc.gv},${sc.gv},${sc.gv})`;
+const fill=(a,b,w,h)=>{x.beginPath();x.roundRect(a+w*.12,b+h*.1,w*.76,h*.8,Math.min(w,h)/3);x.fill()},truth=[],pk={};
+for(let q=0;q<C.nq;q++){const i=Math.floor(Math.random()*C.nc),[a,b]=L.pos(q);fill(a+i*C.px*10,b,C.bw*10,C.bh*10);truth.push(M[i])}
+if(C.id)for(const[k,a,b,m]of idf()){const i=Math.floor(Math.random()*m);pk[k]=[i];fill(a+i*C.ix*10,b,C.iw*10,C.ih*10)}
+const tid=idFrom(pk).ids,P=120,W2=W+2*P,H2=H+2*P,c2=document.createElement('canvas');c2.width=W2;c2.height=H2;const y=c2.getContext('2d');y.fillStyle='#fff';y.fillRect(0,0,W2,H2);
+y.translate(W2/2+sc.dx,H2/2+sc.dy);y.rotate(sc.rot*Math.PI/180);y.scale(sc.sc||1,sc.sc||1);y.drawImage(cv,-W/2,-H/2);y.setTransform(1,0,0,1,0,0);
+if(sc.shade){const g=y.createLinearGradient(0,0,W2,0);g.addColorStop(0,'rgba(0,0,0,0)');g.addColorStop(1,`rgba(0,0,0,${sc.shade})`);y.fillStyle=g;y.fillRect(0,0,W2,H2)}
+if(sc.noise){const d=y.getImageData(0,0,W2,H2);nz(d.data,sc.noise);y.putImageData(d,0,0)}
+const sv=NORM;NORM=!!sc.norm;let res;try{const I=load(c2),r=readSheet(I,(+$('th').value||12)/100);let ok=0;truth.forEach((t,q)=>{if(r.marks[q].join('')==t)ok++});res={ok,n:truth.length,id:!C.id||r.id==tid}}catch(e){res={err:e.message}}NORM=sv;return res}
+$('stb').onclick=async()=>{const SC=[{n:'理想（傾きなし）',rot:0,dx:0,dy:0,gv:30,noise:0},{n:'傾き1.5°・ずれ・縮小',rot:1.5,dx:30,dy:-20,sc:.97,gv:30,noise:0},{n:'薄い塗り（鉛筆）＋ノイズ',rot:.8,dx:-15,dy:10,gv:140,noise:30},
+{n:'照明ムラ（補正なし）',rot:.5,dx:0,dy:0,gv:40,noise:10,shade:.45,norm:false},{n:'照明ムラ（補正あり）',rot:.5,dx:0,dy:0,gv:40,noise:10,shade:.45,norm:true}],t=document.createElement('table'),hd=t.insertRow();
+['条件','答案の一致','ID','備考'].forEach(h=>{const e=document.createElement('th');e.textContent=h;hd.appendChild(e)});$('stout').textContent='';$('stout').appendChild(t);
+for(let i=0;i<SC.length;i++){$('stb').disabled=true;$('stb').textContent=`実行中 ${i+1}/${SC.length}`;await new Promise(r=>setTimeout(r,30));const r=await runTest(SC[i]),row=t.insertRow();
+[SC[i].n,r.err?'-':`${r.ok} / ${r.n}（${Math.round(r.ok/r.n*100)}%）`,r.err?'-':(r.id?'〇':'×'),r.err||''].forEach((v,j)=>{const c=row.insertCell();c.textContent=v;if(j==3&&v)c.className='w'})}
+$('stb').disabled=false;$('stb').textContent='実行'};
+$('mpf').onchange=()=>{if(CUR&&CUR.res)mpRender(CUR)};
+$('mz').onclick=async()=>{const o=CUR;if(!o||!o.file)return;if(!(o.key&&o.key.length)){$('msg').textContent='正答表がないため手動採点できません';return}
+const I=load(await o.file.get()),nq=CFG.nq,nc=CFG.nc,T=homog([[0,0],[W,0],[W,H],[0,H]],[[0,0],[I.w,0],[I.w,I.h],[0,I.h]]);
+const r={id:'手動入力',marks:Array.from({length:nq},()=>[]),idxs:Array.from({length:nq},()=>[]),rat:Array.from({length:nq},()=>Array(nc).fill(0)),idd:[],idp:{},mk:null,full:1,T,flags:['手動採点'],ov:{}};
+Object.assign(o,{I,r,res:grade(r.marks,o.key,r.ov),err:0,flags:r.flags.slice(),id:r.id});render();showRed(o)};
+let ED=[];
+function edLoad(){const k=parseKey($('key').value),M=lab();ED=Array.from({length:CFG.nq},(_,q)=>{const x=k[q]||{};return{m:new Set([...(x.val||'')].filter(c=>M.includes(c))),sc:x.score??1,g:x.gid||'',u:x.ut||null}})}
+function edLines(){const M=lab(),L=ED.map(e=>[M.filter(c=>e.m.has(c)).join(''),e.sc,e.g,e.u=='partial'?'順不同部分点':e.u=='perfect'?'順不同':''].join('\t'));while(L.length&&!L[L.length-1].split('\t')[0])L.pop();return L.join('\n')}
+function edSync(){$('key').value=edLines();saveS()}
+function edRender(){const M=lab(),t=$('edt');t.textContent='';const hd=t.insertRow();['問','正答（クリックで選択・複数可）','配点','グループ','種別'].forEach(x=>{const h=document.createElement('th');h.textContent=x;hd.appendChild(h)});
+ED.forEach((e,q)=>{const r=t.insertRow();r.insertCell().textContent='問'+(q+1);const c=r.insertCell();
+M.forEach(ch=>{const b=document.createElement('button');b.textContent=ch;b.style.cssText='padding:2px 8px;margin:1px';const on=()=>{b.className=e.m.has(ch)?'p':''};on();b.onclick=()=>{e.m.has(ch)?e.m.delete(ch):e.m.add(ch);on();edSync()};c.appendChild(b)});
+const sc=document.createElement('input');sc.type='number';sc.min=0;sc.step='any';sc.style.width='64px';sc.value=e.sc;sc.oninput=()=>{e.sc=parseFloat(sc.value)||0;edSync()};r.insertCell().appendChild(sc);
+const g=document.createElement('input');g.type='text';g.size=3;g.value=e.g;g.oninput=()=>{e.g=g.value.trim();edSync()};r.insertCell().appendChild(g);
+const sel=document.createElement('select');[['','通常'],['partial','順不同部分点'],['perfect','順不同']].forEach(([v,tx])=>{const o=document.createElement('option');o.value=v;o.textContent=tx;sel.appendChild(o)});sel.value=e.u||'';sel.onchange=()=>{e.u=sel.value||null;edSync()};r.insertCell().appendChild(sel)})}
+$('edb').onclick=()=>{const h=$('ed').hidden=!$('ed').hidden;if(!h){edLoad();edRender()}};
+$('edbb').onclick=()=>{const v=parseFloat($('edbs').value)||0;ED.forEach(e=>e.sc=v);edRender();edSync()};
+$('ed100').onclick=()=>{let ix=ED.map((e,q)=>e.m.size?q:-1).filter(q=>q>=0);if(!ix.length)ix=ED.map((_,q)=>q);const n=ix.length,b=Math.floor(100/n),rm=100%n;ix.forEach((q,j)=>ED[q].sc=b+(j<rm?1:0));edRender();edSync()};
+$('edclr').onclick=()=>{ED.forEach(e=>e.m.clear());edRender();edSync()};
+$('mf').onchange=async function(){const f=this.files[0];if(!f)return;try{const it=(await expand([f]))[0],I=load(await it.get()),r=readSheet(I,(+$('th').value||12)/100),old=parseKey($('key').value),
+L=r.marks.map((m,q)=>{const o=old[q]||{};return[m.join(''),o.score??1,o.gid||'',o.ut=='partial'?'順不同部分点':o.ut=='perfect'?'順不同':''].join('\t')});
+while(L.length&&!L[L.length-1].split('\t')[0])L.pop();$('key').value=L.join('\n');saveS();$('msg').textContent=`模範解答シートから${L.length}問分の正答を作成しました。配点は「かんたんエディタ」で設定できます`;if(!$('ed').hidden){edLoad();edRender()}}
+catch(e){$('msg').textContent='模範解答シートを読み取れません：'+e.message}this.value=''};$('vf').onchange=render;$('ce').onclick=()=>{$('ef').select();document.execCommand('copy')};$('gr2').oninput=()=>csv();$('cp').onclick=()=>{$('csv').select();document.execCommand('copy')};
+const imgOf=f=>new Promise((ok,ng)=>{const u=URL.createObjectURL(f),i=new Image();i.onload=()=>ok(i);i.onerror=()=>ng(new Error('画像を開けません'));i.src=u});
+$('go').onclick=async()=>{const fs0=[...$('fl').files];if(!fs0.length){$('msg').textContent='画像またはPDFファイルを選んでください';return}$('msg').textContent='ファイルを準備中…';const fs=await expand(fs0);
+const key=parseKey($('key').value),base=(+$('th').value||12)/100;OUT=[];
+for(let i=0;i<fs.length;i++){$('msg').textContent=`処理中 ${i+1}/${fs.length}`;await new Promise(r=>setTimeout(r));
+try{const I=load(await fs[i].get()),r=readSheet(I,base),res=key.length?grade(r.marks,key):null;OUT.push({name:fs[i].name,I,r,res,key,base,file:fs[i],flags:r.flags,id:r.id})}
+catch(e){let url='';try{const sr=await fs[i].get(),cv=document.createElement('canvas');cv.width=sr.width;cv.height=sr.height;cv.getContext('2d').drawImage(sr,0,0);url=cv.toDataURL('image/jpeg',.7)}catch(e2){}OUT.push({name:fs[i].name,id:'(読取失敗)',flags:[e.message],err:1,key,base,file:fs[i],url})}}
+OUT.sort((a,b)=>(a.id+a.name)<(b.id+b.name)?-1:1);$('msg').textContent=`${OUT.length}件を処理しました。行をクリックすると赤ペン画像を表示します。`+(key.length&&key.length!=CFG.nq?` 注意：正答表${key.length}問・用紙${CFG.nq}問`:'');render()};
+function render(){checkIds();stats();const tb=$('tb');tb.textContent='';const hd=tb.insertRow();['読取ID','氏名','ファイル','得点','要確認'].forEach(t=>{const h=document.createElement('th');h.textContent=t;hd.appendChild(h)});
+($('vf').checked?OUT.filter(o=>o.err||o.flags.length):OUT).forEach(o=>{const r=tb.insertRow();r.className='r';[o.id,o.nm||'',o.name,o.res?`${o.res.tot} / ${o.res.max}`:'-',o.flags.join('、')].forEach((t,i)=>{const c=r.insertCell();if(i==0){const n=document.createElement('input');n.value=t;n.size=14;n.onclick=e=>e.stopPropagation();n.onchange=()=>{o.id=n.value;render()};c.appendChild(n)}else c.textContent=t;if(i==4&&t)c.className='w'});
+r.onclick=()=>{CUR=o;if(!o.err&&o.res){showRed(o);$('vw').scrollIntoView();return}if(o.err){const im=new Image();im.onload=()=>{const d=$('rp');d.width=im.width;d.height=im.height;d.getContext('2d').drawImage(im,0,0);$('vt').textContent=o.name+'（読み込めなかった画像）';$('vw').hidden=false;$('vw').scrollIntoView()};im.src=o.url||'';return}if(!o.res)return;const c=redpen(o.I,o.r,o.key,o.res),d=$('rp');d.width=c.width;d.height=c.height;d.getContext('2d').drawImage(c,0,0);$('vt').textContent=o.id+'  '+o.name;$('vw').hidden=false;$('vw').scrollIntoView()}});
+const bad=OUT.filter(o=>o.err);$('ef').value=bad.map(o=>o.name+'\t'+o.flags.join(' / ')).join('\n');$('en').textContent=bad.length?`読み込めなかったファイル：${bad.length}件`:'読み込めなかったファイルはありません';csv();saveWork()}
+function csv(){const q=s=>'"'+String(s).replace(/"/g,'""')+'"',ok=OUT.filter(o=>o.res),L=ok[0]?ok[0].res.R.length:0,rows=[['学年','読取ID','氏名','ファイル名','得点','満点',...Array.from({length:L},(_,i)=>'問'+(i+1)),'要確認']];
+OUT.forEach(o=>rows.push([$('gr2').value,o.id,o.nm||'',o.name,o.res?o.res.tot:'',o.res?o.res.max:'',...Array.from({length:L},(_,i)=>o.res?(o.res.R[i].ok?'〇':'×'):''),o.flags.join(' / ')]));
+$('csv').value=rows.map(r=>r.map(q).join(',')).join('\n')}
+const FD=[['nq','問題数',1,200],['cols','列数',1,8],['nc','選択肢数',2,12],['mL','左余白mm',12,100],['mR','右余白mm',12,100],['mT','上余白mm',12,100],['mB','下余白mm',12,100],['bw','丸の幅mm',1.5,8],['bh','丸の高さmm',2,10],['px','選択肢の間隔mm',3,20],['py','行の間隔mm',3,20],['grp','区切り行数',1,50],['gsp','区切りの隙間mm',0,10],['nw','番号欄の幅mm',3,20],['idY','ID欄の上位置mm',14,60],['ng','番号とマークの間隔mm',0.5,20],['lh','上の数字の高さmm',0.5,15],['idl','ID欄の数字の高さmm',0.3,5],['iw','ID欄の丸の幅mm',1.5,8],['ih','ID欄の丸の高さmm',2,10],['ix','ID欄の丸の間隔mm',3,12],['tnX','テスト名の左位置mm',0,280],['tnY','テスト名の上下位置mm',6,200],['tnS','テスト名の文字サイズmm',2,30],['nmX','氏名欄の左位置mm',0,280],['nmY','氏名欄の上位置mm',6,200],['nmW','氏名欄の幅mm',20,150],['nmH','氏名欄の高さmm',5,30]];
+const cf=$('cf');FD.forEach(([k,t,mn,mx])=>{const l=document.createElement('label'),i=document.createElement('input');l.append(t+' ');i.type='number';i.id='c_'+k;i.min=mn;i.max=mx;i.step='any';i.oninput=ch;l.appendChild(i);cf.appendChild(l)});
+cf.insertAdjacentHTML('beforeend','<label>表記 <select id="c_ls"><option value="num">1,2,3…</option><option value="zero">1〜9,0</option><option value="abc">A,B,C…</option><option value="kana">ア,イ,ウ…</option></select></label><label><input type="checkbox" id="c_id"> 学年・組・番号欄</label><label>テスト名 <input type="text" id="c_tn" size="44"></label><label><input type="checkbox" id="c_nm"> 氏名欄</label><label><input type="checkbox" id="c_gr"> 学年欄（丸）</label>');
+$('c_ls').onchange=$('c_id').onchange=$('c_nm').onchange=$('c_gr').onchange=ch;$('c_tn').oninput=ch;
+function put(){FD.forEach(([k])=>$('c_'+k).value=CFG[k]);$('c_ls').value=CFG.ls;$('c_id').checked=!!CFG.id;$('c_tn').value=CFG.tn;$('c_nm').checked=!!CFG.nm;$('c_gr').checked=!!CFG.gr}
+function refresh(){$('wn').textContent=check().join(' ／ ');$('code').value=JSON.stringify(CFG);try{localStorage.setItem('omrcfg',JSON.stringify(CFG))}catch(e){}drawSheet()}
+function ch(e){const C=CFG;FD.forEach(([k,,mn,mx])=>{const v=parseFloat($('c_'+k).value);if(!isNaN(v))C[k]=Math.min(mx,Math.max(mn,v))});
+['nq','cols','nc','grp'].forEach(k=>C[k]=Math.round(C[k]));C.ls=$('c_ls').value;C.id=$('c_id').checked?1:0;C.tn=$('c_tn').value;C.nm=$('c_nm').checked?1:0;C.gr=$('c_gr').checked?1:0;C.nc=Math.min(C.nc,{num:9,zero:10}[C.ls]||12);if(e&&e.target&&(e.target.id=='c_idY'||e.target.id=='c_id')&&C.id&&C.mT<C.idY+2*C.ih+8.1){C.mT=Math.round((C.idY+2*C.ih+8.1)*10)/10;$('c_mT').value=C.mT}refresh()}
+$('code').oninput=function(){try{const o=JSON.parse(this.value);if(typeof o.nq!='number')return;CFG={...DEF,...o};put();$('wn').textContent=check().join(' ／ ');try{localStorage.setItem('omrcfg',JSON.stringify(CFG))}catch(e){}drawSheet()}catch(e){}};
+$('rst').onclick=()=>{CFG={...DEF};put();refresh()};
+$('fit').onclick=()=>{const C=CFG,L=Lq(),g=Math.floor((L.rows-1)/C.grp),av=(H-(C.mB+C.mT+C.bh)*10)/10-g*C.gsp;
+C.py=Math.max(C.bh+1.5,Math.min(9,+(av/Math.max(1,L.rows-1)).toFixed(1)));C.px=Math.max(C.bw+1.5,Math.min(10,+((L.cp/10-C.nw-C.bw-3)/Math.max(1,C.nc-1)).toFixed(1)));put();refresh()};
+try{const o=JSON.parse(localStorage.getItem('omrcfg')||'null');if(o&&typeof o.nq=='number')CFG={...DEF,...o}}catch(e){}
+if(CFG.id&&CFG.mT<CFG.idY+2*CFG.ih+8.1)CFG.mT=CFG.idY+2*CFG.ih+8.1;put();refresh();
+</script></main></body></html>
